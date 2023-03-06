@@ -7,18 +7,13 @@
  * Algolia Woo Indexer class for sending products
 
  * Called from main plugin file algolia-woo-indexer.php
-
  *
-
  * @package algolia-woo-indexer
-
  */
 
 
 
 namespace Algowoo;
-
-
 
 use \Algowoo\Algolia_Check_Requirements as Algolia_Check_Requirements;
 
@@ -27,12 +22,11 @@ use \Algowoo\Algolia_Check_Requirements as Algolia_Check_Requirements;
 /**
 
  * Abort if this file is called directly
-
  */
 
-if (!defined('ABSPATH')) {
+if ( ! defined('ABSPATH') ) {
 
-    exit;
+	exit;
 
 }
 
@@ -41,12 +35,11 @@ if (!defined('ABSPATH')) {
 /**
 
  * Include plugin file if function is_plugin_active does not exist
-
  */
 
-if (!function_exists('is_plugin_active')) {
+if ( ! function_exists('is_plugin_active') ) {
 
-    require_once(ABSPATH . '/wp-admin/includes/plugin.php');
+	require_once ABSPATH . '/wp-admin/includes/plugin.php';
 
 }
 
@@ -55,7 +48,6 @@ if (!function_exists('is_plugin_active')) {
 /**
 
  * Define the plugin version and the database table name
-
  */
 
 define('ALGOWOO_DB_OPTION', '_algolia_woo_indexer');
@@ -67,7 +59,6 @@ define('ALGOWOO_CURRENT_DB_VERSION', '0.3');
 /**
 
  * Define application constants
-
  */
 
 define('CHANGE_ME', 'change me');
@@ -77,7 +68,6 @@ define('CHANGE_ME', 'change me');
 /**
 
  * Database table names
-
  */
 
 define('INDEX_NAME', '_index_name');
@@ -90,396 +80,317 @@ define('ALGOLIA_API_KEY', '_admin_api_key');
 
 
 
-if (!class_exists('Algolia_Send_Products')) {
+if ( ! class_exists('Algolia_Send_Products') ) {
 
-    /**
+	/**
 
-     * Algolia WooIndexer main class
-
-     */
-
-    
-
-    // TODO Rename class "Algolia_Send_Products" to match the regular expression ^[A-Z][a-zA-Z0-9]*$.
-
-    class Algolia_Send_Products
-
-    {
-
-        const PLUGIN_NAME      = 'Algolia Woo Indexer';
-
-        const PLUGIN_TRANSIENT = 'algowoo-plugin-notice';
+	 * Algolia WooIndexer main class
+	 */
 
 
 
-        /**
+	// TODO Rename class "Algolia_Send_Products" to match the regular expression ^[A-Z][a-zA-Z0-9]*$.
 
-         * The Algolia instance
-
-         *
-
-         * @var \Algolia\AlgoliaSearch\SearchClient
-
-         */
-
-        private static $algolia = null;
+	class Algolia_Send_Products {
 
 
 
-        /**
+		const PLUGIN_NAME = 'Algolia Woo Indexer';
 
-         * Check if we can connect to Algolia, if not, handle the exception, display an error and then return
+		const PLUGIN_TRANSIENT = 'algowoo-plugin-notice';
 
-         */
 
-        public static function can_connect_to_algolia()
 
-        {
+		/**
 
-            try {
+		 * The Algolia instance
+		 *
+		 * @var \Algolia\AlgoliaSearch\SearchClient
+		 */
 
-                self::$algolia->listApiKeys();
+		private static $algolia = null;
 
-            } catch (\Algolia\AlgoliaSearch\Exceptions\UnreachableException $error) {
 
-                add_action(
 
-                    'admin_notices',
+		/**
 
-                    function () {
+		 * Check if we can connect to Algolia, if not, handle the exception, display an error and then return
+		 */
 
-                        echo '<div class="error notice">
+		public static function can_connect_to_algolia() {
+			try {
+
+				self::$algolia->listApiKeys();
+
+			} catch ( \Algolia\AlgoliaSearch\Exceptions\UnreachableException $error ) {
+
+				add_action(
+
+					'admin_notices',
+
+					function () {
+
+						echo '<div class="error notice">
 
 							  <p>' . esc_html__('An error has been encountered. Please check your application ID and API key. ', 'algolia-woo-indexer') . '</p>
 
 							</div>';
 
-                    }
+					}
 
-                );
+				);
 
-                return;
+				return;
 
-            }
+			}
 
-        }
+		}
 
 
 
-        /**
+		/**
 
-         * Get sale price or regular price based on product type
+		 * Get sale price or regular price based on product type
+		 *
+		 * @param  mixed $product Product to check
 
-         *
+		 * @return array ['sale_price' => $sale_price,'regular_price' => $regular_price] Array with regular price and sale price
+		 */
 
-         * @param  mixed $product Product to check   
+		public static function get_product_type_price( $product ) {
+			$sale_price = 0;
 
-         * @return array ['sale_price' => $sale_price,'regular_price' => $regular_price] Array with regular price and sale price
+			$regular_price = 0;
 
-         */
+			if ( $product->is_type('simple') ) {
 
-        public static function get_product_type_price($product)
+				$sale_price = $product->get_sale_price();
 
-        {
+				$regular_price = $product->get_regular_price();
 
-            $sale_price = 0;
+			} elseif ( $product->is_type('variable') ) {
 
-            $regular_price = 0;
+				$sale_price = $product->get_variation_sale_price('min', true);
 
-            if ($product->is_type('simple')) {
+				$regular_price = $product->get_variation_regular_price('max', true);
 
-                $sale_price     =  $product->get_sale_price();
+			}
 
-                $regular_price  =  $product->get_regular_price();
+			return array(
 
-            } elseif ($product->is_type('variable')) {
+				'sale_price'    => $sale_price,
 
-                $sale_price     =  $product->get_variation_sale_price('min', true);
+				'regular_price' => $regular_price,
 
-                $regular_price  =  $product->get_variation_regular_price('max', true);
+			);
 
-            }
+		}
 
-            return array(
 
-                'sale_price' => $sale_price,
 
-                'regular_price' => $regular_price
+		/**
 
-            );
+		 * Send WooCommerce products to Algolia
+		 *
+		 * @param Int $id Product to send to Algolia if we send only a single product
 
-        }
+		 * @return void
+		 */
 
+		public static function send_products_to_algolia( $id = '' ) {
+			/**
 
+			 * Remove classes from plugin URL and autoload Algolia with Composer
+			 */
 
-        /**
+			$base_plugin_directory = str_replace('classes', '', dirname(__FILE__));
 
-         * Send WooCommerce products to Algolia
+			require_once $base_plugin_directory . '/vendor/autoload.php';
 
-         *
+			/**
 
-         * @param Int $id Product to send to Algolia if we send only a single product
+			 * Fetch the required variables from the Settings API
+			 */
 
-         * @return void
+			$algolia_application_id = get_option(ALGOWOO_DB_OPTION . ALGOLIA_APP_ID);
 
-         */
+			$algolia_application_id = is_string($algolia_application_id) ? $algolia_application_id : CHANGE_ME;
 
-        public static function send_products_to_algolia($id = '')
+			$algolia_api_key = get_option(ALGOWOO_DB_OPTION . ALGOLIA_API_KEY);
 
-        {
+			$algolia_api_key = is_string($algolia_api_key) ? $algolia_api_key : CHANGE_ME;
 
-            /**
+			$algolia_index_name = get_option(ALGOWOO_DB_OPTION . INDEX_NAME);
 
-             * Remove classes from plugin URL and autoload Algolia with Composer
+			$algolia_index_name = is_string($algolia_index_name) ? $algolia_index_name : CHANGE_ME;
 
-             */
+			/**
 
+			 * Display admin notice and return if not all values have been set
+			 */
 
+			Algolia_Check_Requirements::check_algolia_input_values($algolia_application_id, $algolia_api_key, $algolia_index_name);
 
-            $base_plugin_directory = str_replace('classes', '', dirname(__FILE__));
+			/**
 
-            require_once $base_plugin_directory . '/vendor/autoload.php';
+			 * Initiate the Algolia client
+			 */
 
+			self::$algolia = \Algolia\AlgoliaSearch\SearchClient::create($algolia_application_id, $algolia_api_key);
 
+			/**
 
-            /**
+			 * Check if we can connect, if not, handle the exception, display an error and then return
+			 */
 
-             * Fetch the required variables from the Settings API
+			self::can_connect_to_algolia();
 
-             */
+			/**
 
+			 * Initialize the search index and set the name to the option from the database
+			 */
 
+			$index = self::$algolia->initIndex($algolia_index_name);
 
-            $algolia_application_id = get_option(ALGOWOO_DB_OPTION . ALGOLIA_APP_ID);
+			/**
 
-            $algolia_application_id = is_string($algolia_application_id) ? $algolia_application_id : CHANGE_ME;
+			 * Setup arguments for sending all products to Algolia
 
+			 * Limit => -1 means we send all products
+			 */
 
+			$arguments = array(
 
-            $algolia_api_key        = get_option(ALGOWOO_DB_OPTION . ALGOLIA_API_KEY);
+				'status'   => 'publish',
 
-            $algolia_api_key        = is_string($algolia_api_key) ? $algolia_api_key : CHANGE_ME;
+				'limit'    => -1,
 
+				'paginate' => false,
 
+			);
 
-            $algolia_index_name     = get_option(ALGOWOO_DB_OPTION . INDEX_NAME);
+			/**
 
-            $algolia_index_name        = is_string($algolia_index_name) ? $algolia_index_name : CHANGE_ME;
+			 * Setup arguments for sending only a single product
+			 */
 
+			if ( isset($id) && '' !== $id ) {
 
+				$arguments = array(
 
-            /**
+					'status'   => 'publish',
 
-             * Display admin notice and return if not all values have been set
+					'include'  => array( $id ),
 
-             */
+					'paginate' => false,
 
+				);
 
+			}
 
-            Algolia_Check_Requirements::check_algolia_input_values($algolia_application_id, $algolia_api_key, $algolia_index_name);
+			/**
 
+			 * Fetch all products from WooCommerce
+			 *
+			 * @see https://docs.woocommerce.com/wc-apidocs/function-wc_get_products.html
+			 */
 
+			$products =
 
-            /**
+				/** @scrutinizer ignore-call */
 
-             * Initiate the Algolia client
+				wc_get_products($arguments);
 
-             */
+			if ( empty($products) ) {
 
-            self::$algolia = \Algolia\AlgoliaSearch\SearchClient::create($algolia_application_id, $algolia_api_key);
+				return;
 
+			}
 
+			$records = array();
 
-            /**
+			$record = array();
 
-             * Check if we can connect, if not, handle the exception, display an error and then return
+			foreach ( $products as $product ) {
 
-             */
+				/**
 
-            self::can_connect_to_algolia();
+				 * Set sale price or regular price based on product type
+				 */
 
+				$product_type_price = self::get_product_type_price($product);
 
+				$sale_price = $product_type_price['sale_price'];
 
-            /**
+				$regular_price = $product_type_price['regular_price'];
 
-             * Initialize the search index and set the name to the option from the database
+				$term_list = wp_get_post_terms($product->get_id(), 'product_cat', array( 'fields' => 'names' ));
 
-             */
+				/**
 
-            $index = self::$algolia->initIndex($algolia_index_name);
+				 * Extract image from $product->get_image()
+				 */
 
+				preg_match('/<img(.*)src(.*)=(.*)"(.*)"/U', $product->get_image(), $result);
 
+				$product_image = array_pop($result);
 
-            /**
+				/**
 
-             * Setup arguments for sending all products to Algolia
+				 * Build the record array using the information from the WooCommerce product
+				 */
 
-             *
+				$record['objectID'] = $product->get_id();
 
-             * Limit => -1 means we send all products
+				$record['product_name'] = $product->get_name();
 
-             */
+				$record['product_image'] = $product_image;
 
-            $arguments = array(
+				$record['short_description'] = $product->get_short_description();
 
-                'status'   => 'publish',
+				$record['regular_price'] = $regular_price;
 
-                'limit'    => -1,
+				$record['sale_price'] = $sale_price;
 
-                'paginate' => false,
+				$record['on_sale'] = $product->is_on_sale();
 
-            );
+				$record['category'] = $term_list;
 
+				$records[] = $record;
 
+			}
 
-            /**
+			wp_reset_postdata();
 
-             * Setup arguments for sending only a single product
+			/**
 
-             */
+			 * Send the information to Algolia and save the result
 
-            if (isset($id) && '' !== $id) {
+			 * If result is NullResponse, print an error message
+			 */
 
-                $arguments = array(
+			$result = $index->saveObjects($records);
 
-                    'status'   => 'publish',
+			if ( 'Algolia\AlgoliaSearch\Response\NullResponse' === get_class($result) ) {
 
-                    'include'  => array($id),
+				wp_die(esc_html__('No response from the server. Please check your settings and try again', 'algolia_woo_indexer_settings'));
 
-                    'paginate' => false,
+			}
 
-                );
+			/**
 
-            }
+			 * Display success message
+			 */
 
-
-
-            /**
-
-             * Fetch all products from WooCommerce
-
-             *
-
-             * @see https://docs.woocommerce.com/wc-apidocs/function-wc_get_products.html
-
-             */
-
-            $products =
-
-                /** @scrutinizer ignore-call */
-
-                wc_get_products($arguments);
-
-
-
-            if (empty($products)) {
-
-                return;
-
-            }
-
-            $records = array();
-
-            $record  = array();
-
-
-
-            foreach ($products as $product) {
-
-                /**
-
-                 * Set sale price or regular price based on product type
-
-                 */
-               
-
-                $product_type_price = self::get_product_type_price($product);
-
-                $sale_price = $product_type_price['sale_price'];
-
-                $regular_price = $product_type_price['regular_price']; 
-
-                $term_list = wp_get_post_terms($product->get_id(), 'product_cat', array('fields' => 'names'));
-
-
-
-                /**
-
-                 * Extract image from $product->get_image()
-
-                 */
-
-                preg_match('/<img(.*)src(.*)=(.*)"(.*)"/U', $product->get_image(), $result);
-
-                $product_image = array_pop($result);
-
-                /**
-
-                 * Build the record array using the information from the WooCommerce product
-
-                 */
-
-                $record['objectID']                      = $product->get_id();
-
-                $record['product_name']                  = $product->get_name();
-
-                $record['product_image']                 = $product_image;
-
-                $record['short_description']             = $product->get_short_description();
-
-                $record['regular_price']                 = $regular_price;
-
-                $record['sale_price']                    = $sale_price;
-
-                $record['on_sale']                       = $product->is_on_sale();
-
-                $record['category']                       = $term_list;
-
-           
-
-                $records[] = $record;
-
-            }
-
-            wp_reset_postdata();
-
-
-
-            /**
-
-             * Send the information to Algolia and save the result
-
-             * If result is NullResponse, print an error message
-
-             */
-
-            $result = $index->saveObjects($records);
-
-
-
-            if ('Algolia\AlgoliaSearch\Response\NullResponse' === get_class($result)) {
-
-                wp_die(esc_html__('No response from the server. Please check your settings and try again', 'algolia_woo_indexer_settings'));
-
-            }
-
-
-
-            /**
-
-             * Display success message
-
-             */
-
-            echo '<div class="notice notice-success is-dismissible">
+			echo '<div class="notice notice-success is-dismissible">
 
 					 	<p>' . esc_html__('Product(s) sent to Algolia.', 'algolia-woo-indexer') . '</p>
 
 				  		</div>';
 
-        }
+		}
 
-    }
+	}
 
 }
 
